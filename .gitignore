@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+db.sqlite3
+db.sqlite3-journal
+
+# DRF & general API environment
+.env
+.env.*
+*.env
+secrets.json
+
+# If using Django's static/media
+/staticfiles/
+/media/
+
+# Migrations
+**/migrations/
+!*/migrations/__init__.py
+
+# VS Code settings
+.vscode/
+
+# PyCharm settings
+.idea/
+
+# Virtualenv
+venv/
+env/
+ENV/
+.venv/
+.python-version
+
+# Coverage reports
+htmlcov/
+.coverage
+.tox/
+.nox/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Test output
+.junit.xml
+test-output/
+
+# MyPy, Pyright, Ruff, Pylint
+.mypy_cache/
+.pyright/
+.pytest_cache/
+ruff_cache/
+
+# Other
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
