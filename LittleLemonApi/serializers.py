@@ -27,10 +27,21 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
+
+    # Show category name in GET response
+    category = serializers.CharField(source='category.title', read_only=True)
+    
+    # Allow setting category by ID in POST/PUT
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=models.Category.objects.all(),
+        source='category',
+        write_only=True
+    )
+
     class Meta:
-        medel = models.MenuItem
-        category = CategorySerializer(read_only =True)
-        category_id = serializers.IntegerField(write_only = True)
+        model = models.MenuItem
+        # category = CategorySerializer(read_only =True)
+        # category_id = serializers.IntegerField(write_only = True)
         fields = ['id','title','price','featured','category','category_id']
 
 

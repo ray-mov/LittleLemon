@@ -24,3 +24,7 @@ POST  3) http://127.0.0.1:8000/auth/token/login
                   If the user is not found, returns 404 – Not found
 
     /api/groups/manager/users/{userId}
+
+
+# Menu-items endpoints
+   http://127.0.0.1:8000/api/menu-items

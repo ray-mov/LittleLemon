@@ -30,7 +30,7 @@ class CategoryList(APIView):
 
 @api_view(['POST','GET','DELETE'])
 @permission_classes([IsAdminUser])
-def UserGroup(request):
+def ManagerView(request):
     try:
         manager = Group.objects.get(name="Manager")
     except Group.DoesNotExist:
@@ -59,12 +59,12 @@ def UserGroup(request):
 @permission_classes([IsAdminUser])
 def DeliveyCrewView(request):
     try:
-        manager = Group.objects.get(name="Delivery")
+        delivery_crew = Group.objects.get(name="Delivery-Crew")
     except Group.DoesNotExist:
-        return Response({"error": "Manager group does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Delivery-Crew group does not exist"}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':      
-        users = manager.user_set.all()
+        users = delivery_crew.user_set.all()
         serialized_users =  serializers.UserGroupSerializer(users, many=True)
         return Response(serialized_users.data)
     
@@ -73,10 +73,10 @@ def DeliveyCrewView(request):
         user = get_object_or_404(User, username = username)
         
         if request.method == 'POST':
-            manager.user_set.add(user)
+            delivery_crew.user_set.add(user)
             message = "User added to group"
         elif request.method == 'DELETE':
-            manager.user_set.remove(user)
+            delivery_crew.user_set.remove(user)
             message = "User deleted"
         return Response({"message": message })
     return Response({"message ": "error"}, status=status.HTTP_400_BAD_REQUEST)
@@ -96,20 +96,50 @@ def DeliveyCrewView(request):
 # many = True
 
 @api_view(['GET','POST'])
+@permission_classes([IsAuthenticated])
 def menu_items(request):
+    
+    
     if request.method == 'GET':
         items = models.MenuItem.objects.select_related('category').all()
         serialized_items = serializers.MenuItemSerializer(items, many = True)
-        return Response(serialized_items.data)
+        return Response(serialized_items.data, status= status.HTTP_200_OK)
+    
+    
     if request.method == 'POST':
-        serialized_items = serializers.MenuItemSerializer(items, many = True)
+        # only manager
+        manager = Group.objects.get(name="Manager")
+        if not manager:
+             return Response({'message':'access denied'}, status= status.HTTP_403_FORBIDDEN)
+
+        serialized_items = serializers.MenuItemSerializer(data = request.data)
         serialized_items.is_valid(raise_exception=True)
         serialized_items.save()
         return Response(serialized_items.data, status= status.HTTP_201_CREATED)
 
 
-@api_view()
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def menu_item_single(request,id):
-    items =get_object_or_404(models.MenuItem.objects.get(pk=id))
-    serialized_items = serializers.MenuItemSerializer(items)
-    return Response(serialized_items.data)
+
+    user_role = request.user.role
+    item =get_object_or_404(models.MenuItem.objects.get(pk=id))
+
+    if request.method == 'GET':
+        serialized_items = serializers.MenuItemSerializer(item)
+        return Response(serialized_items.data, status=status.HTTP_200_OK)
+    
+    if request.method in ['PUT', 'PATCH', 'DELETE']:
+         if user_role != 'Manager':
+            return Response({'message': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+         
+         if request.method in ['PUT', 'PATCH']:
+            serializer =serializers.MenuItemSerializer(item, data=request.data, partial=(request.method == 'PATCH'))
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+         
+         if request.method == 'DELETE':
+            item.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
