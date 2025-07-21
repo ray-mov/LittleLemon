@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User, Group
+from django.db import transaction
 from . import models
 from . import serializers
 # Create your views here.
@@ -122,15 +123,16 @@ def menu_items(request):
 @permission_classes([IsAuthenticated])
 def menu_item_single(request,id):
 
-    user_role = request.user.role
-    item =get_object_or_404(models.MenuItem.objects.get(pk=id))
+    manager = Group.objects.get(name="Manager")
+
+    item =get_object_or_404(models.MenuItem,pk=id)
 
     if request.method == 'GET':
         serialized_items = serializers.MenuItemSerializer(item)
         return Response(serialized_items.data, status=status.HTTP_200_OK)
     
     if request.method in ['PUT', 'PATCH', 'DELETE']:
-         if user_role != 'Manager':
+         if not manager:
             return Response({'message': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
          
          if request.method in ['PUT', 'PATCH']:
@@ -143,3 +145,146 @@ def menu_item_single(request,id):
          if request.method == 'DELETE':
             item.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
+         
+
+@api_view(['GET','POST','DELETE'])
+@permission_classes([IsAuthenticated])
+def cart_view(request):
+
+    customer = request.user.groups.filter(name = "Customer").exists()
+    
+    # only for customers
+    if not customer:
+        return Response({'message': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    
+    user_id = request.user.id
+    # cart_items = get_object_or_404(models.Cart,user = user_id)
+    cart_items = models.Cart.objects.filter(user = user_id)
+
+    if request.method == "GET":
+        serialized_cart = serializers.CartSerializer(cart_items, many=True)
+        return Response(serialized_cart.data, status= status.HTTP_200_OK)
+
+    
+    elif request.method == "POST":
+        serialized_items = serializers.CartSerializer(data = request.data, context={'request': request})
+        serialized_items.is_valid(raise_exception=True)
+        serialized_items.save()
+        return Response(serialized_items.data, status= status.HTTP_201_CREATED)
+    
+    elif request.method == 'DELETE':
+
+        delete_count, _ = models.Cart.objects.filter(user = user_id).delete()
+        if delete_count == 0:
+            return Response(
+                {"message": "No items were found in your cart."},
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {"message": f"{delete_count} items deleted from your cart."},
+            status=status.HTTP_200_OK
+        )
+         
+
+
+
+@api_view(['GET','POST','PUT','PATCH','DELETE'])
+@permission_classes([IsAuthenticated])
+def orders_view(request):
+    
+    group = Group.objects.get(user = request.user.id).name
+
+    if group == "Manager":
+        orders = models.Order.objects.all()
+    elif group == "Delivery-Crew":
+        orders = models.Order.objects.filter(delivery_crew = request.user.id)
+        
+    else:
+        orders = models.Order.objects.filter(user = request.user.id)
+
+
+    if request.method == 'GET':
+        serializered_item = serializers.OrderSerializer(orders, many = True)
+        return Response(serializered_item.data, status= status.HTTP_200_OK)
+
+
+    
+    if request.method == 'POST':
+       
+        if group != 'Customer':
+            return Response({"message": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+        
+        cart_items = models.Cart.objects.filter(user = request.user.id)
+
+        if not cart_items.exists():
+                return Response({"message":"No item in cart" }, status= status.HTTP_404_NOT_FOUND)
+        
+        total_price = 0
+            
+        for item in cart_items:
+                total_price += item.price
+
+        with transaction.atomic():
+            # new order
+            order = models.Order.objects.create( user = request.user, total = total_price)
+
+            # orderItems
+
+            order_item = []
+            for cart_item in cart_items:
+                order_item.append(models.OrderItem(
+                    order = order,
+                    menuitem = cart_item.menuitem,
+                    quantity = cart_item.quantity,
+                    unit_price = cart_item.menuitem.price,
+                    price = cart_item.price
+                ))
+            
+            models.OrderItem.objects.bulk_create(order_item)
+
+            #clear cart
+
+            cart_items.delete()
+
+        serializer = serializers.OrderSerializer(order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED) 
+             
+
+
+@api_view(['GET','DELETE','PUT','PATCH'])
+@permission_classes([IsAuthenticated])
+def order_view_single(request, orderId = None):
+    user = request.user
+    order = get_object_or_404(models.Order, pk = orderId)
+
+    group = Group.objects.get(user = request.user.id).name
+
+    if request.method == 'GET':
+
+        if group == 'Customer':
+            serialized_order = serializers.OrderSerializer(order)
+            return Response(serialized_order.data, status= status.HTTP_200_OK)
+
+    if request.method == 'DELETE':
+
+        if group != "Manager":
+            return Response({"message" : "Not Allowed"}, status= status.HTTP_401_UNAUTHORIZED)
+        order.delete()
+        return Response({"message":"Order deleted"}, status= status.HTTP_204_NO_CONTENT)
+    
+    if request.method in ["PUT","PATCH"]:
+        if group == "Manager":
+            serialized_order = serializers.OrderSerializer(order, data = request.data , partial = True) 
+            if serialized_order.is_valid():
+                serialized_order.save()
+                return Response(serialized_order.data,status=status.HTTP_201_CREATED)
+            return Response(serialized_order.errors, status=status.HTTP_400_BAD_REQUEST)
+        elif group == "Delivery-Crew":
+            status_value = request.data.get("status")
+            if status_value not in [0, 1]:
+                return Response({"message": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
+            order.status = status_value
+            order.save()
+            return Response({"status": order.status})
+        else:
+            return Response({"message": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
